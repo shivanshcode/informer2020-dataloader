@@ -93,6 +93,8 @@ class Exp_Informer(Exp_Basic):
             cols=args.cols
         )
         print(flag, len(data_set))
+        # Checking the form of Dataset Needed
+        print(f'Dataset Type: {flag}, {data_set}', flush=True)
         data_loader = DataLoader(
             data_set,
             batch_size=batch_size,
