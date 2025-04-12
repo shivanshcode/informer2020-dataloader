@@ -18,6 +18,7 @@ class Dataset_ETT_hour(Dataset):
                  target='OT', scale=True, inverse=False, timeenc=0, freq='h', cols=None):
         # size [seq_len, label_len, pred_len]
         # info
+        print(f'Size in Dataset_ETT_hour: {size}', flush=True)
         if size == None:
             self.seq_len = 24*4*4
             self.label_len = 24*4
