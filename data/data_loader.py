@@ -34,11 +34,15 @@ class Dataset_ETT_hour(Dataset):
 
 
         # Checking how many times the type_map is called
-        print(f'{self.set_type}', flush=True)
+        #print(f'{self.set_type}', flush=True)
         self.features = features
         self.target = target
         self.scale = scale
         self.inverse = inverse
+        
+        # Checking values of scale and inverse
+        print(f'Scale: {self.scale}, Inverse: {self.inverse}', flush=True)
+        
         self.timeenc = timeenc
         self.freq = freq
         
