@@ -31,7 +31,10 @@ class Dataset_ETT_hour(Dataset):
         assert flag in ['train', 'test', 'val']
         type_map = {'train':0, 'val':1, 'test':2}
         self.set_type = type_map[flag]
-        
+
+
+        # Checking how many times the type_map is called
+        print(f'{self.set_type}', flush=True)
         self.features = features
         self.target = target
         self.scale = scale
