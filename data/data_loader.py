@@ -387,7 +387,6 @@ class Dataset_Pred(Dataset):
         return self.scaler.inverse_transform(data)
 
 
-
 class Dataset_Custom2(Dataset):
     def __init__(self, root_path, flag='train', size=None,
                  features='S', data_path='ETTh1.csv',
@@ -423,10 +422,21 @@ class Dataset_Custom2(Dataset):
         df_raw = pd.read_csv(os.path.join(self.root_path, self.data_path))
         df_raw['date'] = pd.to_datetime(df_raw['date'])
 
-        # Group into 3-month blocks (quarters)
-        df_raw['block'] = df_raw['date'].dt.to_period('Q')
-        block_groups = df_raw.groupby('block')
-        block_ranges = {block: (group.index.min(), group.index.max()) for block, group in block_groups}
+        # Total number of timestamps
+        total_timestamps = len(df_raw)
+
+        # Number of blocks
+        num_blocks = 8
+
+        # Calculate block size (assuming equal division)
+        block_size = total_timestamps // num_blocks
+
+        # Define block ranges
+        block_ranges = {}
+        for i in range(num_blocks):
+            start_idx = i * block_size
+            end_idx = (i + 1) * block_size if i < num_blocks - 1 else total_timestamps
+            block_ranges[i] = (start_idx, end_idx)
 
         # Total sequence length per subblock
         total_seq_len = self.seq_len + self.pred_len  # 96 + 24 = 120 hours
@@ -436,7 +446,7 @@ class Dataset_Custom2(Dataset):
         val_starts = []
         test_starts = []
 
-        for block, (block_start, block_end) in block_ranges.items():
+        for block_id, (block_start, block_end) in block_ranges.items():
             # Maximum starting index for a full sequence within the block
             max_start = block_end - total_seq_len + 1
             if max_start < block_start:
