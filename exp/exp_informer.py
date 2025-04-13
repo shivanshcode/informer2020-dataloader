@@ -83,19 +83,8 @@ class Exp_Informer(Exp_Basic):
             Data = Dataset_Pred
         else:
             shuffle_flag = True; drop_last = True; batch_size = args.batch_size; freq=args.freq
-        # data_set = Data(
-        #     root_path=args.root_path,
-        #     data_path=args.data_path,
-        #     flag=flag,
-        #     size=[args.seq_len, args.label_len, args.pred_len],
-        #     features=args.features,
-        #     target=args.target,
-        #     inverse=args.inverse,
-        #     timeenc=timeenc,
-        #     freq=freq,
-        #     cols=args.cols
-        # )
-
+       
+        
         data_set = Data(
             root_path=args.root_path,
             data_path=args.data_path,
@@ -103,9 +92,29 @@ class Exp_Informer(Exp_Basic):
             size=[args.seq_len, args.label_len, args.pred_len],
             features=args.features,
             target=args.target,
+            inverse=args.inverse,
             timeenc=timeenc,
-            freq=freq
+            freq=freq,
+            cols=args.cols
         )
+
+
+        #self, root_path, flag='train', size=None,
+        #         features='S', data_path='ETTh1.csv',
+        #         target='OT', scale=True, inverse=False, timeenc=0, freq='h', cols=None)
+        
+        # Dataset Custom 2
+        
+        # data_set = Data(
+        #     root_path=args.root_path,
+        #     data_path=args.data_path,
+        #     flag=flag,
+        #     size=[args.seq_len, args.label_len, args.pred_len],
+        #     features=args.features,
+        #     target=args.target,
+        #     timeenc=timeenc,
+        #     freq=freq
+        # )
 
 
         # self, root_path, flag='train', size=None,
