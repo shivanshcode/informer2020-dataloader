@@ -9,6 +9,9 @@ from torch.utils.data import Dataset, DataLoader
 from utils.tools import StandardScaler
 from utils.timefeatures import time_features
 
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -533,3 +536,120 @@ class Dataset_Custom2(Dataset):
 
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)
+
+
+
+
+class Dataset_ETT_hour2(Dataset):
+    def __init__(self, root_path, flag='train', size=None,
+                 features='S', data_path='ETTh1.csv',
+                 target='OT', scale=True, inverse=False, timeenc=0, freq='h', cols=None):
+        # size [seq_len, label_len, pred_len]
+        if size is None:
+            self.seq_len = 24 * 4 * 4      # e.g., 384
+            self.label_len = 24 * 4        # e.g., 96
+            self.pred_len = 24 * 4         # e.g., 96
+        else:
+            self.seq_len = size[0]
+            self.label_len = size[1]
+            self.pred_len = size[2]
+       
+        # Initialize
+        assert flag in ['train', 'test', 'val']
+        type_map = {'train': 0, 'val': 1, 'test': 2}
+        self.set_type = type_map[flag]
+       
+        self.features = features
+        self.target = target
+        self.scale = scale
+        self.inverse = inverse
+        self.timeenc = timeenc
+        self.freq = freq
+       
+        self.root_path = root_path
+        self.data_path = data_path
+        self.__read_data__()
+
+    def __read_data__(self):
+        self.scaler = StandardScaler()
+        df_raw = pd.read_csv(os.path.join(self.root_path, self.data_path))
+        N = len(df_raw)
+       
+        # Define training portion for fitting scaler (first 60% of data)
+        train_border1 = 0
+        train_border2 = int(0.6 * N)
+       
+        # Select features
+        if self.features in ['M', 'MS']:
+            cols_data = df_raw.columns[1:]
+            df_data = df_raw[cols_data]
+        elif self.features == 'S':
+            df_data = df_raw[[self.target]]
+       
+        # Scale data
+        if self.scale:
+            train_data = df_data[train_border1:train_border2]
+            self.scaler.fit(train_data.values)
+            data = self.scaler.transform(df_data.values)
+        else:
+            data = df_data.values
+       
+        # Store full data
+        self.full_data = data
+        if self.inverse:
+            self.full_data_y = df_data.values  # Unscaled for inverse
+        else:
+            self.full_data_y = data           # Scaled or original
+       
+        # Process timestamps for the entire dataset
+        df_stamp = df_raw[['date']]
+        df_stamp['date'] = pd.to_datetime(df_stamp.date)
+        self.full_data_stamp = time_features(df_stamp, timeenc=self.timeenc, freq=self.freq)
+       
+        # Generate all possible starting indices for overlapping sequences
+        all_indices = np.arange(0, N - self.seq_len - self.pred_len + 1)
+       
+        # Randomly split indices into train (60%), val (20%), test (20%)
+        train_indices, temp_indices = train_test_split(
+            all_indices, train_size=0.6, shuffle=True, random_state=42
+        )
+        val_indices, test_indices = train_test_split(
+            temp_indices, train_size=0.5, shuffle=True, random_state=42
+        )
+       
+        # Assign indices based on set_type
+        if self.set_type == 0:    # train
+            self.indices = train_indices
+        elif self.set_type == 1:  # val
+            self.indices = val_indices
+        else:                     # test
+            self.indices = test_indices
+
+    def __getitem__(self, index):
+        # Get the starting index from the split-specific indices
+        start_idx = self.indices[index]
+        s_begin = start_idx
+        s_end = s_begin + self.seq_len
+        r_begin = s_end - self.label_len
+        r_end = r_begin + self.label_len + self.pred_len
+       
+        # Extract sequences from full data
+        seq_x = self.full_data[s_begin:s_end]
+        if self.inverse:
+            seq_y = np.concatenate([
+                self.full_data[r_begin:r_begin + self.label_len],      # Scaled
+                self.full_data_y[r_begin + self.label_len:r_end]       # Unscaled
+            ], axis=0)
+        else:
+            seq_y = self.full_data_y[r_begin:r_end]
+        seq_x_mark = self.full_data_stamp[s_begin:s_end]
+        seq_y_mark = self.full_data_stamp[r_begin:r_end]
+       
+        return seq_x, seq_y, seq_x_mark, seq_y_mark
+   
+    def __len__(self):
+        return len(self.indices)
+
+    def inverse_transform(self, data):
+        return self.scaler.inverse_transform(data)
+
