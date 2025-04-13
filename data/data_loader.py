@@ -385,3 +385,141 @@ class Dataset_Pred(Dataset):
 
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)
+
+
+
+class Dataset_Custom2(Dataset):
+    def __init__(self, root_path, flag='train', size=None,
+                 features='S', data_path='ETTh1.csv',
+                 target='OT', scale=True, timeenc=0, freq='h'):
+        # Default sequence lengths if not provided
+        if size is None:
+            self.seq_len = 96   # Input sequence length: 96 hours
+            self.label_len = 48 # Decoder uses part of output, set as example
+            self.pred_len = 24  # Output sequence length: 24 hours
+        else:
+            self.seq_len, self.label_len, self.pred_len = size
+
+        # Validate flag and map to set type
+        assert flag in ['train', 'val', 'test']
+        self.set_type = {'train': 0, 'val': 1, 'test': 2}[flag]
+
+        # Store configuration
+        self.features = features
+        self.target = target
+        self.scale = scale
+        self.timeenc = timeenc
+        self.freq = freq
+        self.root_path = root_path
+        self.data_path = data_path
+
+        self.__read_data__()
+
+    def __read_data__(self):
+        # Initialize scaler
+        self.scaler = StandardScaler()
+
+        # Load dataset
+        df_raw = pd.read_csv(os.path.join(self.root_path, self.data_path))
+        df_raw['date'] = pd.to_datetime(df_raw['date'])
+
+        # Group into 3-month blocks (quarters)
+        df_raw['block'] = df_raw['date'].dt.to_period('Q')
+        block_groups = df_raw.groupby('block')
+        block_ranges = {block: (group.index.min(), group.index.max()) for block, group in block_groups}
+
+        # Total sequence length per subblock
+        total_seq_len = self.seq_len + self.pred_len  # 96 + 24 = 120 hours
+
+        # Generate and assign subblocks for each set
+        train_starts = []
+        val_starts = []
+        test_starts = []
+
+        for block, (block_start, block_end) in block_ranges.items():
+            # Maximum starting index for a full sequence within the block
+            max_start = block_end - total_seq_len + 1
+            if max_start < block_start:
+                continue  # Block too small for a full sequence
+
+            # Generate all possible starting indices (stride 1)
+            block_starts = list(range(block_start, max_start + 1))
+            num_subblocks = len(block_starts)
+
+            # Shuffle indices for random assignment
+            block_starts = np.array(block_starts)
+            np.random.shuffle(block_starts)
+
+            # Compute split sizes
+            train_count = int(0.6 * num_subblocks)
+            val_count = int(0.2 * num_subblocks)
+            test_count = num_subblocks - train_count - val_count  # Ensure all are used
+
+            # Assign subblocks to each set
+            train_starts.extend(block_starts[:train_count])
+            val_starts.extend(block_starts[train_count:train_count + val_count])
+            test_starts.extend(block_starts[train_count + val_count:])
+
+        # Store starting indices for each set
+        self.starts = {
+            'train': sorted(train_starts),
+            'val': sorted(val_starts),
+            'test': sorted(test_starts)
+        }
+
+        # Select features based on type
+        if self.features in ['M', 'MS']:
+            cols_data = df_raw.columns[1:]  # All columns except 'date'
+        elif self.features == 'S':
+            cols_data = [self.target]
+        df_data = df_raw[cols_data]
+
+        # Scale data using training set only
+        if self.scale:
+            train_data = df_data.iloc[self.starts['train']].values
+            self.scaler.fit(train_data)
+            data = self.scaler.transform(df_data.values)
+        else:
+            data = df_data.values
+
+        self.data_x = data
+        self.data_y = data
+
+        # Process time features
+        df_stamp = df_raw[['date']]
+        if self.timeenc == 0:
+            df_stamp = df_stamp.assign(
+                month=df_stamp['date'].dt.month,
+                day=df_stamp['date'].dt.day,
+                weekday=df_stamp['date'].dt.weekday,
+                hour=df_stamp['date'].dt.hour
+            ).drop(['date'], axis=1)
+            data_stamp = df_stamp.values
+        elif self.timeenc == 1:
+            data_stamp = time_features(pd.to_datetime(df_stamp['date'].values), freq=self.freq)
+            data_stamp = data_stamp.transpose(1, 0)
+        self.data_stamp = data_stamp
+
+        # Set sequence starts for this dataset instance
+        self.sequence_starts = self.starts[self.set_type]
+
+    def __getitem__(self, index):
+        # Get the starting index for this sequence
+        s_begin = self.sequence_starts[index]
+        s_end = s_begin + self.seq_len  # End of input sequence
+        r_begin = s_end - self.label_len  # Start of output sequence (for decoder)
+        r_end = r_begin + self.label_len + self.pred_len  # End of output sequence
+
+        # Extract sequences
+        seq_x = self.data_x[s_begin:s_end]  # Input sequence
+        seq_y = self.data_y[r_begin:r_end]  # Output sequence
+        seq_x_mark = self.data_stamp[s_begin:s_end]  # Time features for input
+        seq_y_mark = self.data_stamp[r_begin:r_end]  # Time features for output
+
+        return seq_x, seq_y, seq_x_mark, seq_y_mark
+
+    def __len__(self):
+        return len(self.sequence_starts)
+
+    def inverse_transform(self, data):
+        return self.scaler.inverse_transform(data)
